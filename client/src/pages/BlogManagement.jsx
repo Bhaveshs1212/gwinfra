@@ -1,19 +1,21 @@
-import React, { useState, useEffect } from "react";
-import { useContext } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { StoreContext } from "@/context/StoreContext";
 import {
   Loader2,
   PlusCircle,
   Trash2,
   Edit2,
-  X,
   ImageIcon,
-  LayoutDashboard,
+  Share2,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Link as LinkIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 import axios from "axios";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { Toaster } from "@/components/ui/toaster";
 import {
   Dialog,
@@ -21,19 +23,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+
+/* ---------------- BLOG FORM ---------------- */
 
 const BlogForm = ({
   formData,
@@ -45,66 +41,54 @@ const BlogForm = ({
 }) => {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Blog Title</label>
-        <Input
-          type="text"
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          placeholder="Enter blog title"
-          required
-        />
-      </div>
+      <Input
+        placeholder="Blog Title"
+        value={formData.title}
+        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+        required
+      />
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">
-          Blog Content
-        </label>
-        <Textarea
-          value={formData.content}
-          onChange={(e) =>
-            setFormData({ ...formData, content: e.target.value })
-          }
-          placeholder="Write your blog content here..."
-          className="min-h-[200px]"
-          required
-        />
-      </div>
+      <Textarea
+        placeholder="Blog Content"
+        value={formData.content}
+        onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+        className="min-h-[200px]"
+        required
+      />
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Image URL</label>
-        <Input
-          type="text"
-          value={formData.image}
-          onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-          placeholder="Enter image URL"
-          required
-        />
-      </div>
+      <Input
+        placeholder="Image URL"
+        value={formData.image}
+        onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+        required
+      />
 
       <div className="flex justify-end gap-3">
-        {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
         <Button
           type="submit"
           disabled={submitting}
-          className="bg-[#009a8d] hover:bg-[#008075]">
+          className="bg-[#009a8d] hover:bg-[#008075]"
+        >
           {submitting ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               {isEditing ? "Updating..." : "Creating..."}
             </>
+          ) : isEditing ? (
+            "Update Blog"
           ) : (
-            <>{isEditing ? "Update Blog" : "Create Blog"}</>
+            "Create Blog"
           )}
         </Button>
       </div>
     </form>
   );
 };
+
+/* ---------------- BLOG MANAGEMENT ---------------- */
 
 const BlogManagement = () => {
   const [blogs, setBlogs] = useState([]);
@@ -113,6 +97,8 @@ const BlogManagement = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingBlog, setEditingBlog] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [openShareId, setOpenShareId] = useState(null);
+
   const [formData, setFormData] = useState({
     title: "",
     content: "",
@@ -123,6 +109,45 @@ const BlogManagement = () => {
   const token = localStorage.getItem("token");
   const { toast } = useToast();
 
+  /* ---------------- SHARE LOGIC ---------------- */
+
+  const handleShare = (blog, platform) => {
+    const shareLink = `${window.location.origin}/blogs?blog=${blog._id}`;
+    const text = encodeURIComponent(blog.title);
+
+    let shareUrl = "";
+
+    switch (platform) {
+      case "facebook":
+        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          shareLink
+        )}`;
+        break;
+      case "twitter":
+        shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(
+          shareLink
+        )}`;
+        break;
+      case "linkedin":
+        shareUrl = `https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(
+          shareLink
+        )}&title=${text}`;
+        break;
+      case "copy":
+        navigator.clipboard.writeText(shareLink);
+        toast({ title: "Blog link copied!" });
+        setOpenShareId(null);
+        return;
+      default:
+        return;
+    }
+
+    window.open(shareUrl, "_blank");
+    setOpenShareId(null);
+  };
+
+  /* ---------------- FETCH BLOGS ---------------- */
+
   useEffect(() => {
     fetchBlogs();
   }, []);
@@ -130,12 +155,9 @@ const BlogManagement = () => {
   const fetchBlogs = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${url}/api/blogs`);
-      if (response.data.success) {
-        setBlogs(response.data.blogs || []);
-      }
-    } catch (error) {
-      console.error("Error fetching blogs:", error);
+      const res = await axios.get(`${url}/api/blogs`);
+      setBlogs(res.data.blogs || []);
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -159,55 +181,23 @@ const BlogManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (
-      !formData.title.trim() ||
-      !formData.content.trim() ||
-      !formData.image.trim()
-    ) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please fill all fields",
-      });
-      return;
-    }
-
     try {
       setSubmitting(true);
       if (isEditing) {
-        const response = await axios.put(
-          `${url}/api/blogs/${editingBlog._id}`,
-          formData,
-          { headers: { token } }
-        );
-        if (response.data.success) {
-          toast({
-            title: "Success",
-            description: "Blog updated successfully",
-          });
-        }
-      } else {
-        const response = await axios.post(`${url}/api/blogs/create`, formData, {
+        await axios.put(`${url}/api/blogs/${editingBlog._id}`, formData, {
           headers: { token },
         });
-        if (response.data.success) {
-          toast({
-            title: "Success",
-            description: "Blog created successfully",
-          });
-        }
+        toast({ title: "Blog updated successfully" });
+      } else {
+        await axios.post(`${url}/api/blogs/create`, formData, {
+          headers: { token },
+        });
+        toast({ title: "Blog created successfully" });
       }
       resetForm();
       fetchBlogs();
-    } catch (error) {
-      console.error("Error:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description:
-          error.message || `Failed to ${isEditing ? "update" : "create"} blog`,
-      });
+    } catch {
+      toast({ variant: "destructive", title: "Operation failed" });
     } finally {
       setSubmitting(false);
     }
@@ -220,62 +210,77 @@ const BlogManagement = () => {
     setShowForm(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this blog?")) {
-      return;
-    }
+  const handleDelete = (id) => {
+    // Show a toast-based confirmation with actionable buttons.
+    const t = toast({
+      title: "Confirm delete",
+      description: "Are you sure you want to delete this blog?",
+    });
 
-    try {
-      const response = await axios.delete(`${url}/api/blogs/${id}`, {
-        headers: { token },
-      });
-
-      if (response.data.success) {
-        toast({
-          title: "Success",
-          description: "Blog deleted successfully",
-        });
-        fetchBlogs();
-      }
-    } catch (error) {
-      console.error("Error deleting blog:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to delete blog",
-      });
-    }
+    // Add action buttons to the toast (use update so we can reference the toast handle)
+    t.update({
+      action: (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              t.dismiss();
+              try {
+                setLoading(true);
+                await axios.delete(`${url}/api/blogs/${id}`, {
+                  headers: { token },
+                });
+                toast({ title: "Blog deleted" });
+                fetchBlogs();
+              } catch (err) {
+                toast({ variant: "destructive", title: "Delete failed" });
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="px-3 py-1 bg-red-600 text-white rounded-md text-sm"
+          >
+            Delete
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              t.dismiss();
+            }}
+            className="px-3 py-1 border rounded-md text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+      ),
+    });
   };
 
   return (
     <div className="max-w-7xl mx-auto p-6">
       <Toaster />
 
+      {/* HEADER */}
       <div className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Blog Management</h1>
-          <p className="text-gray-500 mt-1">
-            Create and manage your blog posts
-          </p>
+          <h1 className="text-3xl font-bold">Blog Management</h1>
+          <p className="text-gray-500">Create, edit & share blogs</p>
         </div>
-        <Button
-          onClick={() => setShowForm(true)}
-          className="bg-[#009a8d] hover:bg-[#008075]">
+        <Button onClick={() => setShowForm(true)} className="bg-[#009a8d]">
           <PlusCircle className="w-4 h-4 mr-2" />
           New Blog
         </Button>
       </div>
 
+      {/* FORM DIALOG */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="sm:max-w-[800px]">
           <DialogHeader>
             <DialogTitle>
-              {isEditing ? "Edit Blog" : "Create New Blog"}
+              {isEditing ? "Edit Blog" : "Create Blog"}
             </DialogTitle>
             <DialogDescription>
-              {isEditing
-                ? "Make changes to your blog post here"
-                : "Add a new blog post to your website"}
+              Manage your blog content here
             </DialogDescription>
           </DialogHeader>
           <BlogForm
@@ -289,84 +294,119 @@ const BlogManagement = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Blog List */}
-      <div className="space-y-6">
-        {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-[#009a8d]" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <AnimatePresence>
-              {blogs.map((blog) => (
-                <motion.div
-                  key={blog._id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="group h-full">
-                  <Card className="flex flex-col h-[400px] overflow-hidden hover:shadow-xl transition-all duration-300">
-                    <div className="relative h-48 flex-shrink-0 overflow-hidden">
-                      <img
-                        src={blog.image}
-                        alt={blog.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          size="icon"
-                          variant="secondary"
-                          onClick={() => handleEdit(blog)}
-                          className="h-8 w-8 bg-white hover:bg-gray-100">
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="destructive"
-                          onClick={() => handleDelete(blog._id)}
-                          className="h-8 w-8">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+      {/* BLOG CARDS */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <AnimatePresence>
+          {blogs.map((blog) => (
+            <motion.div key={blog._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <Card className="group hover:shadow-xl transition">
+                {/* Image wrapper - keep clipping for image but allow dropdown to overflow */}
+                <div className="relative h-48">
+                  <div className="h-48 overflow-hidden rounded-t-xl">
+                    <img
+                      src={blog.image}
+                      alt={blog.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition"
+                    />
+                  </div>
+
+                  {/* ACTION BUTTONS (placed in outer relative so dropdown can overflow) */}
+                  <div className="absolute bottom-4 right-4 z-50 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      onClick={() => handleEdit(blog)}
+                    >
+                      <Edit2 size={16} />
+                    </Button>
+
+                    {/* SHARE */}
+                    <div className="relative">
+                      <Button
+                        size="icon"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenShareId(
+                            openShareId === blog._id ? null : blog._id
+                          );
+                        }}
+                      >
+                        <Share2 size={16} />
+                      </Button>
+
+                      {openShareId === blog._id && (
+                        <div className="absolute right-0 top-10 z-50 w-44 rounded-xl border bg-white shadow-lg">
+                          <button
+                            onClick={() => handleShare(blog, "facebook")}
+                            className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-100"
+                          >
+                            <Facebook className="w-4 h-4 text-blue-600" />
+                            Facebook
+                          </button>
+                          <button
+                            onClick={() => handleShare(blog, "twitter")}
+                            className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-100"
+                          >
+                            <Twitter className="w-4 h-4 text-sky-500" />
+                            Twitter
+                          </button>
+                          <button
+                            onClick={() => handleShare(blog, "linkedin")}
+                            className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-100"
+                          >
+                            <Linkedin className="w-4 h-4 text-blue-700" />
+                            LinkedIn
+                          </button>
+                          <div className="h-px bg-gray-200 my-1" />
+                          <button
+                            onClick={() => handleShare(blog, "copy")}
+                            className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-gray-100"
+                          >
+                            <LinkIcon className="w-4 h-4 text-gray-600" />
+                            Copy link
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    <CardContent className="flex-grow p-4 overflow-hidden">
-                      <h3 className="font-bold text-xl mb-2 group-hover:text-[#009a8d] transition-colors line-clamp-2">
-                        {blog.title}
-                      </h3>
-                      <p className="text-gray-600 text-sm line-clamp-4">
-                        {blog.content}
-                      </p>
-                    </CardContent>
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      onClick={() => handleDelete(blog._id)}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                </div>
 
-                    <CardFooter className="mt-auto px-4 py-3 bg-gray-50 border-t">
-                      <div className="flex items-center justify-between w-full">
-                        <span className="text-sm text-gray-500">
-                          {format(new Date(blog.createdAt), "MMM d, yyyy")}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          {Math.ceil(blog.content.split(" ").length / 200)} min
-                          read
-                        </span>
-                      </div>
-                    </CardFooter>
-                  </Card>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
+                <CardContent className="p-4">
+                  <h3 className="font-bold text-lg line-clamp-2">
+                    {blog.title}
+                  </h3>
+                  <p className="text-sm text-gray-600 line-clamp-3">
+                    {blog.content}
+                  </p>
+                </CardContent>
 
-        {!loading && blogs.length === 0 && (
-          <div className="text-center py-12">
-            <ImageIcon className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-500 text-lg">
-              No blogs found. Create your first blog post!
-            </p>
-          </div>
-        )}
+                <CardFooter className="flex justify-between text-sm text-gray-500">
+                  <span>{format(new Date(blog.createdAt), "MMM d, yyyy")}</span>
+                  <span>
+                    {Math.ceil(blog.content.split(" ").length / 200)} min
+                  </span>
+                </CardFooter>
+              </Card>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
+
+      {!loading && blogs.length === 0 && (
+        <div className="text-center py-12">
+          <ImageIcon className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+          <p className="text-gray-500">No blogs yet</p>
+        </div>
+      )}
     </div>
   );
 };
